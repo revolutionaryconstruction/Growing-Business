@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Ứng dụng Camera - Phiên bản Mới</title>
+  <style>
+    /* Reset and base */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { display: flex; flex-direction: column; background: #000; color: #fff; font-family: 'Arial', sans-serif; }
+
+    /* Camera area covers most of the screen */
+    .camera {
+      position: relative;
+      flex-grow: 1;
+      background: #000;
+      overflow: hidden;
+    }
+    .camera video, .camera img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    /* Top bar: icons for flash, timer, switch camera */
+    .top-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 3;
+    }
+    .top-bar .icon {
+      font-size: 24px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .timer {
+      font-size: 16px;
+      letter-spacing: 1px;
+    }
+    /* Camera info text at bottom-left */
+    .camera-info {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      font-size: 14px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 5px 8px;
+      border-radius: 4px;
+      z-index: 3;
+    }
+    /* Flash overlay */
+    .flash {
+      position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+      background: #fff; opacity: 0; pointer-events: none;
+      transition: opacity .15s ease;
+      z-index: 5;
+    }
+    /* Focus frame decorative -- hidden on mobile style for now */
+    .focus-frame {
+      position: absolute; top: 50%; left: 50%; width: 120px; height: 80px;
+      border: 2px solid #00ff00;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      opacity: 0.6;
+      z-index: 3;
+    }
+    /* Bottom control bar: gallery, shutter, mode (unused) */
+    .controls {
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 30px;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 3;
+    }
+    .controls .icon {
+      font-size: 32px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .capture-btn {
+      width: 70px; height: 70px; border-radius: 50%;
+      border: 4px solid #fff; background: none;
+      cursor: pointer; position: relative;
+    }
+    .capture-btn::after {
+      content: '';
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 56px; height: 56px; background: #fff; border-radius: 50%;
+    }
+    /* Hide/show bars: toggling visibility on tap */
+    .hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Shake animation for capture */
+    .shake {
+      animation: shake 0.3s;
+    }
+    @keyframes shake {
+      0%   { transform: translate(0, 0); }
+      25%  { transform: translate(5px, 0); }
+      50%  { transform: translate(-5px, 0); }
+      75%  { transform: translate(5px, 0); }
+      100% { transform: translate(0, 0); }
+    }
+    /* Active flash icon state */
+    .flash-on {
+      color: yellow;
+    }
+  </style>
+</head>
+<body>
+  <div class="camera" id="camera">
+    <video id="video" autoplay muted playsinline></video>
+    <img id="image" src="https://via.placeholder.com/400x300" alt="Camera image" style="display: none;" />
+    <div class="flash" id="flash"></div>
+    <div class="focus-frame"></div>
+    <div class="top-bar" id="topBar">
+      <span class="icon flash-toggle" id="flashToggle">⚡</span>
+      <span class="timer" id="timer">00:00</span>
+      <span class="icon switch-camera" id="switchBtn">🔄</span>
+    </div>
+    <div class="camera-info" id="cameraInfo">ISO 100</div>
+  </div>
+  <div class="controls" id="bottomBar">
+    <span class="icon gallery" id="galleryBtn">🖼️</span>
+    <button id="capture" class="capture-btn"></button>
+    <span class="icon empty"></span>
+  </div>
+  <input type="file" id="upload" accept="image/*" style="display: none;" />
+  <script>
+    const captureBtn = document.getElementById('capture');
+    const cameraEl = document.getElementById('camera');
+    const flashEl = document.getElementById('flash');
+    const timerEl = document.getElementById('timer');
+    const videoEl = document.getElementById('video');
+    const imageEl = document.getElementById('image');
+    const uploadEl = document.getElementById('upload');
+    const topBar = document.getElementById('topBar');
+    const bottomBar = document.getElementById('bottomBar');
+    const cameraInfo = document.getElementById('cameraInfo');
+    const flashToggle = document.getElementById('flashToggle');
+    const switchBtn = document.getElementById('switchBtn');
+    const galleryBtn = document.getElementById('galleryBtn');
+
+    let flashEnabled = true;
+    let useFrontCamera = false;
+    let seconds = 0;
+    // Timer increment every second
+    setInterval(() => {
+      seconds++;
+      const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const secs = String(seconds % 60).padStart(2, '0');
+      timerEl.textContent = `${mins}:${secs}`;
+    }, 1000);
+
+    // Initialize camera
+    async function startCamera() {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          const constraints = { video: { facingMode: useFrontCamera ? 'user' : 'environment' } };
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          videoEl.srcObject = stream;
+          videoEl.play();
+        } catch (err) {
+          console.error('No camera:', err);
+        }
+      }
+    }
+    startCamera();
+
+    // Toggle hide/show of bars on tap
+    cameraEl.addEventListener('click', (e) => {
+      // Only toggle when not clicking on existing child elements that have their own handlers
+      if (e.target.id === 'video' || e.target.id === 'image' || e.target.id === 'camera') {
+        topBar.classList.toggle('hide');
+        bottomBar.classList.toggle('hide');
+        cameraInfo.classList.toggle('hide');
+      }
+    });
+
+    // Toggle flash on icon click
+    flashToggle.addEventListener('click', (e) => {
+      flashEnabled = !flashEnabled;
+      flashToggle.classList.toggle('flash-on', flashEnabled);
+    });
+
+    // Switch camera between front and back
+    switchBtn.addEventListener('click', () => {
+      useFrontCamera = !useFrontCamera;
+      startCamera();
+    });
+
+    // Gallery button triggers hidden file input
+    galleryBtn.addEventListener('click', () => {
+      uploadEl.click();
+    });
+
+    // File input change: show uploaded image
+    uploadEl.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          imageEl.src = ev.target.result;
+          imageEl.style.display = 'block';
+          videoEl.style.display = 'none';
+          cameraInfo.textContent = 'Đã chụp';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Capture button: take snapshot
+    captureBtn.addEventListener('click', () => {
+      // Shake animation
+      cameraEl.classList.add('shake');
+      setTimeout(() => cameraEl.classList.remove('shake'), 300);
+      // Flash effect if enabled
+      if (flashEnabled) {
+        flashEl.style.opacity = 1;
+        setTimeout(() => { flashEl.style.opacity = 0; }, 150);
+      }
+      // Take snapshot
+      if (videoEl.style.display !== 'none') {
+        const canvas = document.createElement('canvas');
+        canvas.width  = videoEl.videoWidth  || 640;
+        canvas.height = videoEl.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+        imageEl.src = canvas.toDataURL('image/png');
+        imageEl.style.display = 'block';
+        videoEl.style.display = 'none';
+        cameraInfo.textContent = 'Đã chụp';
+      }
+    });
+
+    // Reset to video when image is clicked
+    imageEl.addEventListener('click', () => {
+      // Clicking the displayed photo returns to camera
+      imageEl.style.display = 'none';
+      videoEl.style.display = 'block';
+      cameraInfo.textContent = 'ISO 100';
+    });
+  </script>
+</body>
+</html>
